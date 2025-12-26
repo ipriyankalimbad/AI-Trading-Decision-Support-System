@@ -106,12 +106,22 @@ def query_llm(question: str, context: str, api_key: Optional[str] = None) -> str
     except ImportError:
         return "Error: OpenAI library not installed. Please install it with: pip install openai"
     
-    # Get API key
+    # Get API key (check Streamlit secrets first, then environment variable)
     if api_key is None:
-        api_key = os.getenv('OPENAI_API_KEY')
+        try:
+            import streamlit as st
+            # Try to get from Streamlit secrets (for deployed app)
+            if hasattr(st, 'secrets') and 'OPENAI_API_KEY' in st.secrets:
+                api_key = st.secrets['OPENAI_API_KEY']
+        except:
+            pass
+        
+        # Fall back to environment variable (for local development)
+        if not api_key:
+            api_key = os.getenv('OPENAI_API_KEY')
     
     if not api_key:
-        return "Error: OpenAI API key not found. Please set the OPENAI_API_KEY environment variable."
+        return "Error: OpenAI API key not found. Please set it in Streamlit Secrets (for deployed app) or as OPENAI_API_KEY environment variable (for local development)."
     
     try:
         client = OpenAI(api_key=api_key)

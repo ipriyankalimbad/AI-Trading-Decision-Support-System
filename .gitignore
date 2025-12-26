@@ -60,3 +60,11 @@ desktop.ini
 *.tmp
 *.temp
 
+# Private documentation (keep local, don't push to GitHub)
+ADVANCED_ML_IMPROVEMENTS.md
+BACKTEST_EXPLANATION.md
+DEPLOYMENT_STEP_BY_STEP.md
+ML_IMPROVEMENTS_GUIDE.md
+PUSH_TO_GITHUB_GUIDE.md
+API_KEY_SETUP_GUIDE.md
+

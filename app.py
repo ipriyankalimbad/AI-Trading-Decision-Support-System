@@ -858,25 +858,33 @@ else:
         st.markdown("## 💬 AI Q&A Assistant")
         st.markdown("---")
         
-        # Check for API key
-        api_key_set = os.getenv('OPENAI_API_KEY') is not None
+        # Check for API key (check Streamlit secrets first, then environment variable)
+        api_key_set = False
+        try:
+            if 'OPENAI_API_KEY' in st.secrets:
+                api_key_set = True
+        except:
+            pass
+        
+        if not api_key_set:
+            api_key_set = os.getenv('OPENAI_API_KEY') is not None
         
         if not api_key_set:
             st.warning("⚠️ **OpenAI API Key Not Set**")
             st.info("""
-            To enable AI Q&A features, set your OpenAI API key as an environment variable:
+            To enable AI Q&A features:
             
-            **Windows PowerShell:**
+            **For Streamlit Cloud (Deployed App):**
+            1. Go to https://share.streamlit.io/
+            2. Click on your app → Settings → Secrets
+            3. Add: `OPENAI_API_KEY = "your-api-key-here"`
+            4. Save and wait for redeploy
+            
+            **For Local Development:**
+            Set as environment variable:
             ```powershell
             $env:OPENAI_API_KEY="your-api-key-here"
             ```
-            
-            **Windows CMD:**
-            ```cmd
-            set OPENAI_API_KEY=your-api-key-here
-            ```
-            
-            Then restart the application.
             """)
         else:
             st.success("✅ **AI Assistant Ready**")
