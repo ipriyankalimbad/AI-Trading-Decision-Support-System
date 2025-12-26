@@ -718,7 +718,7 @@ else:
                 rr_ratio = risk.get('risk_reward_ratio', 0)
                 st.metric("Risk-Reward Ratio", f"{rr_ratio:.2f}")
             
-            # Additional metrics
+            # Additional metrics..
             st.markdown("### Risk Assessment")
             col1, col2, col3 = st.columns(3)
             with col1:
