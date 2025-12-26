@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier,
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report
-from typing import Tuple, Dict, Optional
+from typing import Tuple, Dict, Optional, Any
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -126,7 +126,7 @@ def prepare_features(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
     return X, y
 
 
-def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple, Dict:
+def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[Any, Any, Any, Dict]:
     """
     Train advanced ensemble model with feature scaling and selection.
     
@@ -318,7 +318,7 @@ def predict_next_direction(model, scaler, feature_selector, X: pd.DataFrame,
     }
 
 
-def run_ml_analysis(df: pd.DataFrame) -> Tuple, Dict, Dict:
+def run_ml_analysis(df: pd.DataFrame) -> Tuple[Tuple[Any, Any, Any], Dict, Dict]:
     """
     Complete advanced ML analysis pipeline.
     
