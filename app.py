@@ -393,9 +393,9 @@ with st.sidebar:
                 st.session_state.indicators_calculated = True
                 
                 # Run ML analysis
-                model, ml_metrics, ml_prediction = run_ml_analysis(df_with_indicators)
+                model_tuple, ml_metrics, ml_prediction = run_ml_analysis(df_with_indicators)
                 st.session_state.ml_results = {
-                    'model': model,
+                    'model': model_tuple,  # Contains (model, scaler, feature_selector)
                     'metrics': ml_metrics,
                     'prediction': ml_prediction
                 }
