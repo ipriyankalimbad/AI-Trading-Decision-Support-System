@@ -70,3 +70,9 @@ API_KEY_SETUP_GUIDE.md
 PROJECT_EXPLANATION.md
 LOCAL_SETUP.md
 
+# Screenshots (keep local only)
+screenshots/
+*.png
+*.jpg
+*.jpeg
+

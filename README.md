@@ -2,24 +2,7 @@
 
 A comprehensive, production-ready trading analysis platform that combines advanced machine learning ensemble models, technical analysis, dynamic risk management, and strategy backtesting. This system provides data-driven insights to support trading decisions through a complete analytical pipeline from raw market data to actionable recommendations. Built with a focus on modularity, scalability, and professional-grade code architecture.
 
----
-
-## Screenshots
-
-### Dashboard Overview
-![Dashboard](screenshots/dashboard.png)
-
-### Technical Analysis Charts
-![Technical Analysis](screenshots/charts.png)
-
-### Machine Learning Predictions
-![ML Predictions](screenshots/ml-predictions.png)
-
-### Risk Management
-![Risk Management](screenshots/risk-management.png)
-
-### Strategy Backtesting
-![Backtesting](screenshots/backtesting.png)
+**Live Demo**: [https://ai-trading-decision-support-system-pri.streamlit.app/](https://ai-trading-decision-support-system-pri.streamlit.app/)
 
 ---
 
