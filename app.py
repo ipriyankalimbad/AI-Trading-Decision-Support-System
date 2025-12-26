@@ -378,7 +378,7 @@ with st.sidebar:
     # Analysis Control
     st.markdown("### ⚙️ Analysis")
     run_analysis = st.button(
-        "🚀 Run Complete Analysis",
+        "Run Complete Analysis",
         type="primary",
         use_container_width=True,
         disabled=not st.session_state.data_processed
