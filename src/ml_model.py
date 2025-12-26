@@ -210,6 +210,9 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
     # Train ensemble
     ensemble_model.fit(X_train_selected, y_train)
     
+    # Fit rf_model separately for feature importance
+    rf_model.fit(X_train_selected, y_train)
+    
     # Predictions
     y_train_pred = ensemble_model.predict(X_train_selected)
     y_test_pred = ensemble_model.predict(X_test_selected)
