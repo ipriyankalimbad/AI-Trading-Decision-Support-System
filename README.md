@@ -2,6 +2,18 @@
 
 A comprehensive, production-ready Streamlit application that combines technical analysis, machine learning predictions, risk management, strategy backtesting, and AI-powered Q&A for stock trading analysis.
 
+## Why this project?
+
+This project was built to showcase:
+- End-to-end **data → ML → decision support** pipelines
+- Practical use of **machine learning for time-series classification**
+- **Risk-aware trading analysis** instead of naive predictions
+- Safe and explainable **LLM integration** for analytical Q&A
+- Clean, modular, production-style Python architecture
+
+It is designed for **educational, analytical, and portfolio demonstration purposes**.
+
+
 ## Features
 
 ### 1. **Data Processing & Validation**
@@ -117,7 +129,7 @@ PROJECT1/
 - This is used for risk management calculations
 
 ### 3. Run Analysis
-- Click "🚀 Run Complete Analysis" button
+- Click "Run Complete Analysis" button
 - The system will:
   - Calculate all technical indicators
   - Train ML model and make predictions
