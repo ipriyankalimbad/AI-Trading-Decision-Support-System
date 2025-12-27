@@ -165,8 +165,8 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
     if len(X_train) < 30:
         raise ValueError("Insufficient data for training. Need at least 30 samples.")
     
-    # Create validation set for early stopping (10% of training data)
-    val_size = max(10, int(len(X_train) * 0.1))
+    # Create validation set for early stopping (10% of training data, min 5 samples)
+    val_size = max(5, min(20, int(len(X_train) * 0.1)))
     X_train_fit = X_train.iloc[:-val_size]
     X_val = X_train.iloc[-val_size:]
     y_train_fit = y_train.iloc[:-val_size]
@@ -190,14 +190,13 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
         index=X_test.index
     )
     
-    # Feature selection (select top K features - adaptive based on data size)
-    # Use mutual information for better feature selection (captures non-linear relationships)
-    if len(X_train) < 200:
-        k_features = min(25, len(X_train.columns))
-    elif len(X_train) < 500:
-        k_features = min(35, len(X_train.columns))
-    else:
-        k_features = min(40, len(X_train.columns))
+    # Adaptive feature selection - smooth scaling based on data size
+    # Formula: k = min(sqrt(n_samples * n_features) * 0.3, n_features * 0.6)
+    # This ensures we use appropriate number of features for any data size
+    n_samples = len(X_train_fit)
+    n_features = len(X_train.columns)
+    k_features = int(min(max(15, np.sqrt(n_samples * n_features) * 0.3), n_features * 0.6, 40))
+    k_features = max(15, min(k_features, len(X_train.columns)))  # Ensure reasonable bounds
     
     # Use mutual information for better feature selection (better for non-linear relationships)
     feature_selector = SelectKBest(score_func=mutual_info_classif, k=k_features)
@@ -217,24 +216,20 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
         index=X_test.index
     )
     
-    # Create ensemble of models with optimal hyperparameters
-    # Model 1: Random Forest (good for non-linear patterns)
-    # Adaptive parameters based on data size - optimized for better test accuracy
-    if len(X_train) < 200:
-        rf_max_depth = 6
-        rf_min_split = 25
-        rf_min_leaf = 10
-        rf_n_est = 150
-    elif len(X_train) < 500:
-        rf_max_depth = 8
-        rf_min_split = 20
-        rf_min_leaf = 8
-        rf_n_est = 200
-    else:
-        rf_max_depth = 10
-        rf_min_split = 15
-        rf_min_leaf = 5
-        rf_n_est = 250
+    # Create ensemble of models with smooth adaptive hyperparameters
+    # Model 1: Random Forest - smooth scaling based on data size
+    n_samples = len(X_train_fit)
+    
+    # Smooth adaptive parameters (no hard thresholds)
+    # Depth: scales logarithmically with data size
+    rf_max_depth = int(max(5, min(10, 4 + np.log10(max(n_samples / 50, 1)))))
+    
+    # Min samples: scales with data size to prevent overfitting
+    rf_min_split = int(max(10, min(30, n_samples / 20)))
+    rf_min_leaf = int(max(5, min(15, n_samples / 40)))
+    
+    # Estimators: scales with data size
+    rf_n_est = int(max(100, min(300, n_samples * 0.4)))
     
     rf_model = RandomForestClassifier(
         n_estimators=rf_n_est,
@@ -242,32 +237,25 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
         min_samples_split=rf_min_split,
         min_samples_leaf=rf_min_leaf,
         max_features='log2',  # Use log2 for better feature diversity
-        max_samples=0.85,  # Use 85% of samples per tree (slightly more data)
+        max_samples=0.8,  # Use 80% of samples per tree (good balance)
         class_weight='balanced',
         random_state=42,
         n_jobs=-1
     )
     
-    # Model 2: Gradient Boosting with early stopping
-    # Adaptive parameters - optimized for better test accuracy
-    if len(X_train) < 200:
-        gb_max_depth = 4
-        gb_min_split = 20
-        gb_min_leaf = 8
-        gb_n_est = 150
-        gb_lr = 0.08
-    elif len(X_train) < 500:
-        gb_max_depth = 5
-        gb_min_split = 15
-        gb_min_leaf = 6
-        gb_n_est = 200
-        gb_lr = 0.06
-    else:
-        gb_max_depth = 6
-        gb_min_split = 12
-        gb_min_leaf = 4
-        gb_n_est = 250
-        gb_lr = 0.05
+    # Model 2: Gradient Boosting with early stopping - smooth adaptive
+    # Depth: slightly shallower than RF
+    gb_max_depth = int(max(3, min(6, 3 + np.log10(max(n_samples / 100, 1)))))
+    
+    # Min samples: similar scaling
+    gb_min_split = int(max(10, min(25, n_samples / 25)))
+    gb_min_leaf = int(max(4, min(12, n_samples / 50)))
+    
+    # Estimators: scales with data size
+    gb_n_est = int(max(100, min(300, n_samples * 0.4)))
+    
+    # Learning rate: adaptive - smaller for larger datasets
+    gb_lr = max(0.03, min(0.1, 0.1 - np.log10(max(n_samples / 100, 1)) * 0.01))
     
     gb_model = GradientBoostingClassifier(
         n_estimators=gb_n_est,
@@ -275,9 +263,9 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
         learning_rate=gb_lr,
         min_samples_split=gb_min_split,
         min_samples_leaf=gb_min_leaf,
-        subsample=0.75,  # Increased for more data usage
+        subsample=0.75,  # Good balance
         validation_fraction=0.1,
-        n_iter_no_change=15,  # More patience for early stopping
+        n_iter_no_change=20,  # More patience for early stopping
         random_state=42
     )
     
