@@ -69,12 +69,18 @@ def prepare_features(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
         df_features['macd_strength'] = abs(df_features['macd'] - df_features['macd_signal']) / (abs(df_features['macd']) + 1e-10)
         feature_columns.extend(['macd_momentum', 'macd_cross', 'macd_strength'])
     
-    # Advanced lagged features (more lags, more features)
-    for col in ['close', 'rsi_14', 'macd', 'daily_returns', 'volume']:
+    # Advanced lagged features (strategic lags for better prediction)
+    for col in ['close', 'rsi_14', 'macd', 'daily_returns']:
         if col in df_features.columns:
-            for lag in [1, 2, 3, 5]:  # More lag periods
+            for lag in [1, 2, 3, 5, 7]:  # More strategic lag periods
                 df_features[f'{col}_lag{lag}'] = df_features[col].shift(lag)
                 feature_columns.append(f'{col}_lag{lag}')
+    
+    # Volume lagged features (fewer lags to avoid noise)
+    if 'volume' in df_features.columns:
+        for lag in [1, 2, 3]:
+            df_features[f'volume_lag{lag}'] = df_features['volume'].shift(lag)
+            feature_columns.append(f'volume_lag{lag}')
     
     # Rolling statistics (volatility, momentum, trends)
     if 'daily_returns' in df_features.columns and len(df_features) > 10:
