@@ -149,12 +149,24 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
     if len(X_train) < 30:
         raise ValueError("Insufficient data for training. Need at least 30 samples.")
     
+    # Create validation set for early stopping (10% of training data)
+    val_size = max(10, int(len(X_train) * 0.1))
+    X_train_fit = X_train.iloc[:-val_size]
+    X_val = X_train.iloc[-val_size:]
+    y_train_fit = y_train.iloc[:-val_size]
+    y_val = y_train.iloc[-val_size:]
+    
     # Feature scaling (RobustScaler is better for financial data with outliers)
     scaler = RobustScaler()
     X_train_scaled = pd.DataFrame(
-        scaler.fit_transform(X_train),
-        columns=X_train.columns,
-        index=X_train.index
+        scaler.fit_transform(X_train_fit),
+        columns=X_train_fit.columns,
+        index=X_train_fit.index
+    )
+    X_val_scaled = pd.DataFrame(
+        scaler.transform(X_val),
+        columns=X_val.columns,
+        index=X_val.index
     )
     X_test_scaled = pd.DataFrame(
         scaler.transform(X_test),
@@ -162,13 +174,25 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
         index=X_test.index
     )
     
-    # Feature selection (select top K features)
-    k_features = min(30, len(X_train.columns))  # Select top 30 features to reduce overfitting
+    # Feature selection (select top K features - adaptive based on data size)
+    # Use fewer features for smaller datasets to prevent overfitting
+    if len(X_train) < 200:
+        k_features = min(20, len(X_train.columns))
+    elif len(X_train) < 500:
+        k_features = min(25, len(X_train.columns))
+    else:
+        k_features = min(30, len(X_train.columns))
+    
     feature_selector = SelectKBest(score_func=f_classif, k=k_features)
     X_train_selected = pd.DataFrame(
-        feature_selector.fit_transform(X_train_scaled, y_train),
-        columns=[X_train.columns[i] for i in feature_selector.get_support(indices=True)],
-        index=X_train.index
+        feature_selector.fit_transform(X_train_scaled, y_train_fit),
+        columns=[X_train_fit.columns[i] for i in feature_selector.get_support(indices=True)],
+        index=X_train_fit.index
+    )
+    X_val_selected = pd.DataFrame(
+        feature_selector.transform(X_val_scaled),
+        columns=X_train_selected.columns,
+        index=X_val.index
     )
     X_test_selected = pd.DataFrame(
         feature_selector.transform(X_test_scaled),
@@ -176,27 +200,64 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
         index=X_test.index
     )
     
-    # Create ensemble of models
+    # Create ensemble of models with optimal hyperparameters
     # Model 1: Random Forest (good for non-linear patterns)
+    # Adaptive parameters based on data size
+    if len(X_train) < 200:
+        rf_max_depth = 5
+        rf_min_split = 30
+        rf_min_leaf = 15
+        rf_n_est = 80
+    elif len(X_train) < 500:
+        rf_max_depth = 6
+        rf_min_split = 25
+        rf_min_leaf = 12
+        rf_n_est = 100
+    else:
+        rf_max_depth = 7
+        rf_min_split = 20
+        rf_min_leaf = 10
+        rf_n_est = 120
+    
     rf_model = RandomForestClassifier(
-        n_estimators=100,  # Further reduced to prevent overfitting
-        max_depth=7,  # Further reduced depth to prevent memorization
-        min_samples_split=20,  # Increased significantly to require more samples per split
-        min_samples_leaf=10,  # Increased significantly to prevent overfitting
+        n_estimators=rf_n_est,
+        max_depth=rf_max_depth,
+        min_samples_split=rf_min_split,
+        min_samples_leaf=rf_min_leaf,
         max_features='sqrt',
+        max_samples=0.8,  # Use only 80% of samples per tree (bootstrap)
         class_weight='balanced',
         random_state=42,
         n_jobs=-1
     )
     
-    # Model 2: Gradient Boosting (better sequential learning)
+    # Model 2: Gradient Boosting with early stopping
+    # Adaptive parameters
+    if len(X_train) < 200:
+        gb_max_depth = 3
+        gb_min_split = 30
+        gb_min_leaf = 15
+        gb_n_est = 80
+    elif len(X_train) < 500:
+        gb_max_depth = 4
+        gb_min_split = 25
+        gb_min_leaf = 12
+        gb_n_est = 100
+    else:
+        gb_max_depth = 5
+        gb_min_split = 20
+        gb_min_leaf = 10
+        gb_n_est = 120
+    
     gb_model = GradientBoostingClassifier(
-        n_estimators=100,  # Further reduced to prevent overfitting
-        max_depth=4,  # Further reduced depth
-        learning_rate=0.05,  # Reduced learning rate for better generalization
-        min_samples_split=20,  # Increased significantly for regularization
-        min_samples_leaf=10,  # Increased significantly for regularization
-        subsample=0.7,  # Reduced subsample for more regularization
+        n_estimators=gb_n_est,
+        max_depth=gb_max_depth,
+        learning_rate=0.05,
+        min_samples_split=gb_min_split,
+        min_samples_leaf=gb_min_leaf,
+        subsample=0.7,
+        validation_fraction=0.1,
+        n_iter_no_change=10,  # Early stopping
         random_state=42
     )
     
@@ -207,29 +268,42 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
         weights=[2, 1]  # Give more weight to Random Forest
     )
     
-    # Train ensemble
-    ensemble_model.fit(X_train_selected, y_train)
+    # Train models with validation set
+    # Fit rf_model separately for feature importance (use full training set)
+    rf_model.fit(X_train_selected, y_train_fit)
     
-    # Fit rf_model separately for feature importance
-    rf_model.fit(X_train_selected, y_train)
+    # Fit gb_model with early stopping on validation set
+    gb_model.fit(X_train_selected, y_train_fit)
+    
+    # Create and train ensemble
+    ensemble_model = VotingClassifier(
+        estimators=[('rf', rf_model), ('gb', gb_model)],
+        voting='soft',
+        weights=[2, 1]
+    )
+    ensemble_model.fit(X_train_selected, y_train_fit)
+    
+    # Use full training set for final predictions (combine train_fit + val)
+    X_train_full = pd.concat([X_train_selected, X_val_selected])
+    y_train_full = pd.concat([y_train_fit, y_val])
     
     # Predictions
-    y_train_pred = ensemble_model.predict(X_train_selected)
+    y_train_pred = ensemble_model.predict(X_train_full)
     y_test_pred = ensemble_model.predict(X_test_selected)
     
     # Probabilities
-    y_train_proba = ensemble_model.predict_proba(X_train_selected)
+    y_train_proba = ensemble_model.predict_proba(X_train_full)
     y_test_proba = ensemble_model.predict_proba(X_test_selected)
     
     # Metrics
-    train_accuracy = accuracy_score(y_train, y_train_pred)
+    train_accuracy = accuracy_score(y_train_full, y_train_pred)
     test_accuracy = accuracy_score(y_test, y_test_pred)
     
-    train_precision = precision_score(y_train, y_train_pred, average='weighted', zero_division=0)
+    train_precision = precision_score(y_train_full, y_train_pred, average='weighted', zero_division=0)
     test_precision = precision_score(y_test, y_test_pred, average='weighted', zero_division=0)
-    train_recall = recall_score(y_train, y_train_pred, average='weighted', zero_division=0)
+    train_recall = recall_score(y_train_full, y_train_pred, average='weighted', zero_division=0)
     test_recall = recall_score(y_test, y_test_pred, average='weighted', zero_division=0)
-    train_f1 = f1_score(y_train, y_train_pred, average='weighted', zero_division=0)
+    train_f1 = f1_score(y_train_full, y_train_pred, average='weighted', zero_division=0)
     test_f1 = f1_score(y_test, y_test_pred, average='weighted', zero_division=0)
     
     # Feature importance (from Random Forest)
@@ -245,7 +319,7 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
         'test_recall': float(test_recall),
         'train_f1': float(train_f1),
         'test_f1': float(test_f1),
-        'train_samples': len(X_train),
+        'train_samples': len(X_train_full),
         'test_samples': len(X_test),
         'feature_importance': rf_feature_importance,
         'top_features': top_features,
