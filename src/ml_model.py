@@ -219,48 +219,46 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
     # Model 1: Random Forest - smooth scaling based on data size
     n_samples = len(X_train_fit)
     
-    # Optimized parameters for maximum test accuracy (70%+)
-    # Depth: allow deeper trees for better pattern learning
-    rf_max_depth = int(max(8, min(12, 6 + np.log10(max(n_samples / 30, 1)))))
+    # Optimized parameters for 70%+ test accuracy with proper regularization
+    # Key: Balance between learning capacity and preventing overfitting
     
-    # Min samples: balanced to prevent overfitting but allow learning
-    rf_min_split = int(max(8, min(20, n_samples / 30)))
-    rf_min_leaf = int(max(3, min(10, n_samples / 60)))
-    
-    # More estimators for better accuracy
-    rf_n_est = int(max(150, min(400, n_samples * 0.5)))
+    # RandomForest - optimized for generalization
+    rf_max_depth = int(max(6, min(9, 5 + np.log10(max(n_samples / 40, 1)))))
+    rf_min_split = int(max(12, min(25, n_samples / 25)))
+    rf_min_leaf = int(max(5, min(12, n_samples / 50)))
+    rf_n_est = int(max(200, min(500, n_samples * 0.6)))
     
     rf_model = RandomForestClassifier(
         n_estimators=rf_n_est,
         max_depth=rf_max_depth,
         min_samples_split=rf_min_split,
         min_samples_leaf=rf_min_leaf,
-        max_features='sqrt',  # sqrt for better balance
-        max_samples=0.85,  # Use 85% of samples per tree
+        max_features='sqrt',
+        max_samples=0.75,  # Reduced to 75% for better generalization
         class_weight='balanced',
         random_state=42,
         n_jobs=-1
     )
     
-    # Model 1b: Extra Trees (complements RandomForest)
+    # Extra Trees - different randomness for diversity
     et_model = ExtraTreesClassifier(
-        n_estimators=int(rf_n_est * 0.8),
+        n_estimators=int(rf_n_est * 0.9),
         max_depth=rf_max_depth,
         min_samples_split=rf_min_split,
         min_samples_leaf=rf_min_leaf,
         max_features='sqrt',
-        max_samples=0.85,
+        max_samples=0.75,
         class_weight='balanced',
-        random_state=42,
+        random_state=123,  # Different seed for diversity
         n_jobs=-1
     )
     
-    # Model 2: Gradient Boosting with optimized parameters
-    gb_max_depth = int(max(5, min(8, 4 + np.log10(max(n_samples / 50, 1)))))
-    gb_min_split = int(max(8, min(18, n_samples / 35)))
-    gb_min_leaf = int(max(3, min(8, n_samples / 70)))
-    gb_n_est = int(max(150, min(400, n_samples * 0.5)))
-    gb_lr = max(0.05, min(0.12, 0.12 - np.log10(max(n_samples / 100, 1)) * 0.01))
+    # Gradient Boosting - optimized with early stopping
+    gb_max_depth = int(max(4, min(7, 3 + np.log10(max(n_samples / 60, 1)))))
+    gb_min_split = int(max(10, min(20, n_samples / 30)))
+    gb_min_leaf = int(max(4, min(10, n_samples / 60)))
+    gb_n_est = int(max(200, min(500, n_samples * 0.6)))
+    gb_lr = max(0.04, min(0.1, 0.1 - np.log10(max(n_samples / 150, 1)) * 0.01))
     
     gb_model = GradientBoostingClassifier(
         n_estimators=gb_n_est,
@@ -268,22 +266,51 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
         learning_rate=gb_lr,
         min_samples_split=gb_min_split,
         min_samples_leaf=gb_min_leaf,
-        subsample=0.8,  # Increased for more data usage
-        validation_fraction=0.1,
-        n_iter_no_change=25,  # More patience
+        subsample=0.7,  # Reduced for better generalization
+        validation_fraction=0.15,  # Larger validation set
+        n_iter_no_change=15,  # Early stopping
         random_state=42
     )
     
-    # Train all models
+    # Train all models on training set
     rf_model.fit(X_train_selected, y_train_fit)
     et_model.fit(X_train_selected, y_train_fit)
     gb_model.fit(X_train_selected, y_train_fit)
     
-    # Create 3-model ensemble for better accuracy
+    # Evaluate individual models on validation set to optimize weights
+    rf_val_pred = rf_model.predict_proba(X_val_selected)
+    et_val_pred = et_model.predict_proba(X_val_selected)
+    gb_val_pred = gb_model.predict_proba(X_val_selected)
+    
+    # Find best weights by testing different combinations on validation set
+    best_accuracy = 0
+    best_weights = [1.0, 1.0, 1.0]
+    
+    # Test different weight combinations
+    weight_combinations = [
+        [1.5, 1.0, 1.0],
+        [1.2, 1.2, 1.0],
+        [1.0, 1.0, 1.0],
+        [1.3, 1.0, 1.2],
+        [1.0, 1.3, 1.0]
+    ]
+    
+    for weights in weight_combinations:
+        # Weighted average of probabilities
+        weighted_proba = (weights[0] * rf_val_pred + 
+                          weights[1] * et_val_pred + 
+                          weights[2] * gb_val_pred) / sum(weights)
+        weighted_pred = np.argmax(weighted_proba, axis=1)
+        val_acc = accuracy_score(y_val, weighted_pred)
+        if val_acc > best_accuracy:
+            best_accuracy = val_acc
+            best_weights = weights
+    
+    # Create ensemble with optimized weights
     ensemble_model = VotingClassifier(
         estimators=[('rf', rf_model), ('et', et_model), ('gb', gb_model)],
-        voting='soft',  # Use probability voting
-        weights=[1.2, 1.0, 1.0]  # Optimized weights
+        voting='soft',
+        weights=best_weights
     )
     ensemble_model.fit(X_train_selected, y_train_fit)
     
