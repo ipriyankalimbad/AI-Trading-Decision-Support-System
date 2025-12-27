@@ -190,12 +190,12 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
         index=X_test.index
     )
     
-    # Adaptive feature selection - smooth scaling based on data size
-    # Use more features for better accuracy (up to 50% of features)
+    # Adaptive feature selection - use MORE features for better accuracy
     n_samples = len(X_train_fit)
     n_features = len(X_train.columns)
-    k_features = int(min(max(20, np.sqrt(n_samples * n_features) * 0.4), n_features * 0.7, 50))
-    k_features = max(20, min(k_features, len(X_train.columns)))  # Ensure reasonable bounds
+    # Use up to 80% of features for better learning capacity
+    k_features = int(min(max(25, np.sqrt(n_samples * n_features) * 0.6), n_features * 0.8, 60))
+    k_features = max(25, min(k_features, len(X_train.columns)))  # Ensure reasonable bounds
     
     # Use mutual information for better feature selection (better for non-linear relationships)
     feature_selector = SelectKBest(score_func=mutual_info_classif, k=k_features)
@@ -219,14 +219,14 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
     # Model 1: Random Forest - smooth scaling based on data size
     n_samples = len(X_train_fit)
     
-    # Optimized parameters for 70%+ test accuracy with proper regularization
-    # Key: Balance between learning capacity and preventing overfitting
+    # AGGRESSIVE parameters for HIGH test accuracy (70%+)
+    # Increased model capacity with controlled regularization
     
-    # RandomForest - optimized for generalization
-    rf_max_depth = int(max(6, min(9, 5 + np.log10(max(n_samples / 40, 1)))))
-    rf_min_split = int(max(12, min(25, n_samples / 25)))
-    rf_min_leaf = int(max(5, min(12, n_samples / 50)))
-    rf_n_est = int(max(200, min(500, n_samples * 0.6)))
+    # RandomForest - MORE CAPACITY for better learning
+    rf_max_depth = int(max(8, min(15, 7 + np.log10(max(n_samples / 30, 1)))))
+    rf_min_split = int(max(5, min(20, n_samples / 40)))  # Reduced for more learning
+    rf_min_leaf = int(max(2, min(10, n_samples / 80)))  # Reduced for more learning
+    rf_n_est = int(max(300, min(800, n_samples * 1.0)))  # More trees
     
     rf_model = RandomForestClassifier(
         n_estimators=rf_n_est,
@@ -234,31 +234,31 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
         min_samples_split=rf_min_split,
         min_samples_leaf=rf_min_leaf,
         max_features='sqrt',
-        max_samples=0.75,  # Reduced to 75% for better generalization
+        max_samples=0.85,  # Use more data (85%)
         class_weight='balanced',
         random_state=42,
         n_jobs=-1
     )
     
-    # Extra Trees - different randomness for diversity
+    # Extra Trees - MORE CAPACITY with different randomness
     et_model = ExtraTreesClassifier(
-        n_estimators=int(rf_n_est * 0.9),
+        n_estimators=int(rf_n_est * 1.0),  # Same number of trees
         max_depth=rf_max_depth,
         min_samples_split=rf_min_split,
         min_samples_leaf=rf_min_leaf,
         max_features='sqrt',
-        max_samples=0.75,
+        max_samples=0.85,
         class_weight='balanced',
         random_state=123,  # Different seed for diversity
         n_jobs=-1
     )
     
-    # Gradient Boosting - optimized with early stopping
-    gb_max_depth = int(max(4, min(7, 3 + np.log10(max(n_samples / 60, 1)))))
-    gb_min_split = int(max(10, min(20, n_samples / 30)))
-    gb_min_leaf = int(max(4, min(10, n_samples / 60)))
-    gb_n_est = int(max(200, min(500, n_samples * 0.6)))
-    gb_lr = max(0.04, min(0.1, 0.1 - np.log10(max(n_samples / 150, 1)) * 0.01))
+    # Gradient Boosting - MORE CAPACITY with better learning
+    gb_max_depth = int(max(5, min(10, 4 + np.log10(max(n_samples / 40, 1)))))
+    gb_min_split = int(max(5, min(15, n_samples / 50)))  # Reduced
+    gb_min_leaf = int(max(2, min(8, n_samples / 100)))  # Reduced
+    gb_n_est = int(max(300, min(800, n_samples * 1.0)))  # More trees
+    gb_lr = max(0.05, min(0.15, 0.12 + np.log10(max(n_samples / 100, 1)) * 0.01))  # Higher LR
     
     gb_model = GradientBoostingClassifier(
         n_estimators=gb_n_est,
@@ -266,9 +266,9 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
         learning_rate=gb_lr,
         min_samples_split=gb_min_split,
         min_samples_leaf=gb_min_leaf,
-        subsample=0.7,  # Reduced for better generalization
-        validation_fraction=0.15,  # Larger validation set
-        n_iter_no_change=15,  # Early stopping
+        subsample=0.85,  # Use more data
+        validation_fraction=0.1,  # Smaller validation for more training
+        n_iter_no_change=20,  # More patience
         random_state=42
     )
     
@@ -286,13 +286,16 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
     best_accuracy = 0
     best_weights = [1.0, 1.0, 1.0]
     
-    # Test different weight combinations
+    # Test MORE weight combinations for better ensemble
     weight_combinations = [
-        [1.5, 1.0, 1.0],
-        [1.2, 1.2, 1.0],
-        [1.0, 1.0, 1.0],
-        [1.3, 1.0, 1.2],
-        [1.0, 1.3, 1.0]
+        [1.5, 1.2, 1.0],
+        [1.3, 1.3, 1.0],
+        [1.2, 1.0, 1.2],
+        [1.0, 1.5, 1.0],
+        [1.4, 1.0, 1.1],
+        [1.0, 1.0, 1.5],
+        [1.2, 1.2, 1.2],
+        [1.3, 1.1, 1.1]
     ]
     
     for weights in weight_combinations:
