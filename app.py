@@ -656,17 +656,38 @@ else:
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 direction = ml_prediction.get('direction', 'N/A')
-                direction_emoji = "📈" if direction == 'Up' else "📉"
+                if direction == 'Up':
+                    direction_emoji = "📈"
+                elif direction == 'Down':
+                    direction_emoji = "📉"
+                elif direction == 'Uncertain':
+                    direction_emoji = "⚠️"
+                else:
+                    direction_emoji = "❓"
                 st.metric("Predicted Direction", f"{direction_emoji} {direction}")
             with col2:
                 confidence = ml_prediction.get('confidence', 0)
-                st.metric("Confidence", f"{confidence:.1%}")
+                low_conf = ml_prediction.get('low_confidence', False)
+                conf_color = "normal" if not low_conf else "off"
+                st.metric("Confidence", f"{confidence:.1%}", delta=None if not low_conf else "Low Confidence")
             with col3:
                 test_acc = ml_metrics.get('test_accuracy', 0)
-                st.metric("Test Accuracy", f"{test_acc:.1%}")
+                wf_test_mean = ml_metrics.get('walk_forward_test_mean', None)
+                if wf_test_mean is not None:
+                    wf_test_std = ml_metrics.get('walk_forward_test_std', 0)
+                    st.metric("Test Accuracy", f"{test_acc:.1%}", 
+                            delta=f"WF: {wf_test_mean:.1%} ± {wf_test_std:.2%}")
+                else:
+                    st.metric("Test Accuracy", f"{test_acc:.1%}")
             with col4:
                 train_acc = ml_metrics.get('train_accuracy', 0)
-                st.metric("Train Accuracy", f"{train_acc:.1%}")
+                wf_train_mean = ml_metrics.get('walk_forward_train_mean', None)
+                if wf_train_mean is not None:
+                    wf_train_std = ml_metrics.get('walk_forward_train_std', 0)
+                    st.metric("Train Accuracy", f"{train_acc:.1%}",
+                            delta=f"WF: {wf_train_mean:.1%} ± {wf_train_std:.2%}")
+                else:
+                    st.metric("Train Accuracy", f"{train_acc:.1%}")
             
             st.markdown("### Prediction Probabilities")
             col1, col2 = st.columns(2)
@@ -684,6 +705,12 @@ else:
                     st.write(f"- Type: {ml_metrics.get('model_type', 'N/A')}")
                     st.write(f"- Training Samples: {ml_metrics.get('train_samples', 0):,}")
                     st.write(f"- Test Samples: {ml_metrics.get('test_samples', 0):,}")
+                    optimal_thresh = ml_metrics.get('optimal_threshold', None)
+                    if optimal_thresh is not None:
+                        st.write(f"- Optimal Threshold: {optimal_thresh:.3f}")
+                    wf_splits = ml_metrics.get('walk_forward_n_splits', 0)
+                    if wf_splits > 0:
+                        st.write(f"- Walk-Forward Folds: {wf_splits}")
                 with col2:
                     st.markdown("**Top Features (Importance):**")
                     top_features = ml_metrics.get('top_features', [])
