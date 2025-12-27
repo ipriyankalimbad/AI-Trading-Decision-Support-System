@@ -179,10 +179,10 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
     # Create ensemble of models
     # Model 1: Random Forest (good for non-linear patterns)
     rf_model = RandomForestClassifier(
-        n_estimators=300,  # More trees
-        max_depth=20,  # Deeper trees
-        min_samples_split=3,
-        min_samples_leaf=1,
+        n_estimators=200,  # Reduced to prevent overfitting
+        max_depth=10,  # Reduced depth to prevent memorization
+        min_samples_split=10,  # Increased to require more samples per split
+        min_samples_leaf=4,  # Increased to prevent overfitting
         max_features='sqrt',
         class_weight='balanced',
         random_state=42,
@@ -191,11 +191,11 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
     
     # Model 2: Gradient Boosting (better sequential learning)
     gb_model = GradientBoostingClassifier(
-        n_estimators=200,
-        max_depth=8,
+        n_estimators=150,  # Reduced to prevent overfitting
+        max_depth=5,  # Reduced depth
         learning_rate=0.1,
-        min_samples_split=4,
-        min_samples_leaf=2,
+        min_samples_split=10,  # Increased for regularization
+        min_samples_leaf=4,  # Increased for regularization
         subsample=0.8,
         random_state=42
     )
