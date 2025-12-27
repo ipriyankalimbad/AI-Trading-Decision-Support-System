@@ -163,7 +163,7 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
     )
     
     # Feature selection (select top K features)
-    k_features = min(50, len(X_train.columns))  # Select top 50 features or all if less
+    k_features = min(30, len(X_train.columns))  # Select top 30 features to reduce overfitting
     feature_selector = SelectKBest(score_func=f_classif, k=k_features)
     X_train_selected = pd.DataFrame(
         feature_selector.fit_transform(X_train_scaled, y_train),
