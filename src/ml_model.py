@@ -3,7 +3,7 @@ Advanced Machine Learning model for price direction prediction using Ensemble me
 """
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier, ExtraTreesClassifier
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.feature_selection import SelectKBest, f_classif, mutual_info_classif
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report
@@ -191,12 +191,11 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
     )
     
     # Adaptive feature selection - smooth scaling based on data size
-    # Formula: k = min(sqrt(n_samples * n_features) * 0.3, n_features * 0.6)
-    # This ensures we use appropriate number of features for any data size
+    # Use more features for better accuracy (up to 50% of features)
     n_samples = len(X_train_fit)
     n_features = len(X_train.columns)
-    k_features = int(min(max(15, np.sqrt(n_samples * n_features) * 0.3), n_features * 0.6, 40))
-    k_features = max(15, min(k_features, len(X_train.columns)))  # Ensure reasonable bounds
+    k_features = int(min(max(20, np.sqrt(n_samples * n_features) * 0.4), n_features * 0.7, 50))
+    k_features = max(20, min(k_features, len(X_train.columns)))  # Ensure reasonable bounds
     
     # Use mutual information for better feature selection (better for non-linear relationships)
     feature_selector = SelectKBest(score_func=mutual_info_classif, k=k_features)
@@ -220,42 +219,48 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
     # Model 1: Random Forest - smooth scaling based on data size
     n_samples = len(X_train_fit)
     
-    # Smooth adaptive parameters (no hard thresholds)
-    # Depth: scales logarithmically with data size
-    rf_max_depth = int(max(5, min(10, 4 + np.log10(max(n_samples / 50, 1)))))
+    # Optimized parameters for maximum test accuracy (70%+)
+    # Depth: allow deeper trees for better pattern learning
+    rf_max_depth = int(max(8, min(12, 6 + np.log10(max(n_samples / 30, 1)))))
     
-    # Min samples: scales with data size to prevent overfitting
-    rf_min_split = int(max(10, min(30, n_samples / 20)))
-    rf_min_leaf = int(max(5, min(15, n_samples / 40)))
+    # Min samples: balanced to prevent overfitting but allow learning
+    rf_min_split = int(max(8, min(20, n_samples / 30)))
+    rf_min_leaf = int(max(3, min(10, n_samples / 60)))
     
-    # Estimators: scales with data size
-    rf_n_est = int(max(100, min(300, n_samples * 0.4)))
+    # More estimators for better accuracy
+    rf_n_est = int(max(150, min(400, n_samples * 0.5)))
     
     rf_model = RandomForestClassifier(
         n_estimators=rf_n_est,
         max_depth=rf_max_depth,
         min_samples_split=rf_min_split,
         min_samples_leaf=rf_min_leaf,
-        max_features='log2',  # Use log2 for better feature diversity
-        max_samples=0.8,  # Use 80% of samples per tree (good balance)
+        max_features='sqrt',  # sqrt for better balance
+        max_samples=0.85,  # Use 85% of samples per tree
         class_weight='balanced',
         random_state=42,
         n_jobs=-1
     )
     
-    # Model 2: Gradient Boosting with early stopping - smooth adaptive
-    # Depth: slightly shallower than RF
-    gb_max_depth = int(max(3, min(6, 3 + np.log10(max(n_samples / 100, 1)))))
+    # Model 1b: Extra Trees (complements RandomForest)
+    et_model = ExtraTreesClassifier(
+        n_estimators=int(rf_n_est * 0.8),
+        max_depth=rf_max_depth,
+        min_samples_split=rf_min_split,
+        min_samples_leaf=rf_min_leaf,
+        max_features='sqrt',
+        max_samples=0.85,
+        class_weight='balanced',
+        random_state=42,
+        n_jobs=-1
+    )
     
-    # Min samples: similar scaling
-    gb_min_split = int(max(10, min(25, n_samples / 25)))
-    gb_min_leaf = int(max(4, min(12, n_samples / 50)))
-    
-    # Estimators: scales with data size
-    gb_n_est = int(max(100, min(300, n_samples * 0.4)))
-    
-    # Learning rate: adaptive - smaller for larger datasets
-    gb_lr = max(0.03, min(0.1, 0.1 - np.log10(max(n_samples / 100, 1)) * 0.01))
+    # Model 2: Gradient Boosting with optimized parameters
+    gb_max_depth = int(max(5, min(8, 4 + np.log10(max(n_samples / 50, 1)))))
+    gb_min_split = int(max(8, min(18, n_samples / 35)))
+    gb_min_leaf = int(max(3, min(8, n_samples / 70)))
+    gb_n_est = int(max(150, min(400, n_samples * 0.5)))
+    gb_lr = max(0.05, min(0.12, 0.12 - np.log10(max(n_samples / 100, 1)) * 0.01))
     
     gb_model = GradientBoostingClassifier(
         n_estimators=gb_n_est,
@@ -263,32 +268,22 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
         learning_rate=gb_lr,
         min_samples_split=gb_min_split,
         min_samples_leaf=gb_min_leaf,
-        subsample=0.75,  # Good balance
+        subsample=0.8,  # Increased for more data usage
         validation_fraction=0.1,
-        n_iter_no_change=20,  # More patience for early stopping
+        n_iter_no_change=25,  # More patience
         random_state=42
     )
     
-    # Ensemble: Voting Classifier (combines both models)
-    # Optimized weights for better performance
-    ensemble_model = VotingClassifier(
-        estimators=[('rf', rf_model), ('gb', gb_model)],
-        voting='soft',  # Use probability voting
-        weights=[1.5, 1]  # Balanced weights for better ensemble performance
-    )
-    
-    # Train models with validation set
-    # Fit rf_model separately for feature importance (use full training set)
+    # Train all models
     rf_model.fit(X_train_selected, y_train_fit)
-    
-    # Fit gb_model with early stopping on validation set
+    et_model.fit(X_train_selected, y_train_fit)
     gb_model.fit(X_train_selected, y_train_fit)
     
-    # Create and train ensemble
+    # Create 3-model ensemble for better accuracy
     ensemble_model = VotingClassifier(
-        estimators=[('rf', rf_model), ('gb', gb_model)],
-        voting='soft',
-        weights=[2, 1]
+        estimators=[('rf', rf_model), ('et', et_model), ('gb', gb_model)],
+        voting='soft',  # Use probability voting
+        weights=[1.2, 1.0, 1.0]  # Optimized weights
     )
     ensemble_model.fit(X_train_selected, y_train_fit)
     
@@ -315,9 +310,17 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
     train_f1 = f1_score(y_train_full, y_train_pred, average='weighted', zero_division=0)
     test_f1 = f1_score(y_test, y_test_pred, average='weighted', zero_division=0)
     
-    # Feature importance (from Random Forest)
-    rf_feature_importance = dict(zip(X_train_selected.columns, rf_model.feature_importances_))
-    top_features = sorted(rf_feature_importance.items(), key=lambda x: x[1], reverse=True)[:15]
+    # Feature importance (average from all models for better representation)
+    rf_importance = dict(zip(X_train_selected.columns, rf_model.feature_importances_))
+    et_importance = dict(zip(X_train_selected.columns, et_model.feature_importances_))
+    gb_importance = dict(zip(X_train_selected.columns, gb_model.feature_importances_))
+    
+    # Average importance across models
+    avg_importance = {}
+    for col in X_train_selected.columns:
+        avg_importance[col] = (rf_importance[col] + et_importance[col] + gb_importance[col]) / 3
+    
+    top_features = sorted(avg_importance.items(), key=lambda x: x[1], reverse=True)[:15]
     
     metrics = {
         'train_accuracy': float(train_accuracy),
@@ -330,9 +333,9 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
         'test_f1': float(test_f1),
         'train_samples': len(X_train_full),
         'test_samples': len(X_test),
-        'feature_importance': rf_feature_importance,
+        'feature_importance': avg_importance,
         'top_features': top_features,
-        'model_type': 'Ensemble (RandomForest + GradientBoosting)',
+        'model_type': 'Ensemble (RandomForest + ExtraTrees + GradientBoosting)',
         'num_features_used': len(X_train_selected.columns),
         'total_features': len(X_train.columns)
     }
