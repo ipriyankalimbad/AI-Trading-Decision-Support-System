@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
 from sklearn.preprocessing import StandardScaler, RobustScaler
-from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.feature_selection import SelectKBest, f_classif, mutual_info_classif
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report
 from typing import Tuple, Dict, Optional, Any
 import warnings
@@ -97,7 +97,17 @@ def prepare_features(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
     if 'atr_14' in df_features.columns and 'close' in df_features.columns:
         df_features['atr_percent'] = df_features['atr_14'] / (df_features['close'] + 1e-10)
         df_features['atr_trend'] = df_features['atr_14'].rolling(window=5).mean() / (df_features['atr_14'].rolling(window=10).mean() + 1e-10)
-        feature_columns.extend(['atr_percent', 'atr_trend'])
+        df_features['atr_change'] = df_features['atr_14'].pct_change()  # ATR momentum
+        feature_columns.extend(['atr_percent', 'atr_trend', 'atr_change'])
+    
+    # Feature interactions (key indicator combinations)
+    if 'rsi_14' in df_features.columns and 'macd' in df_features.columns:
+        df_features['rsi_macd_interaction'] = df_features['rsi_14'] * df_features['macd']
+        feature_columns.append('rsi_macd_interaction')
+    
+    if 'sma_20' in df_features.columns and 'rsi_14' in df_features.columns:
+        df_features['sma_rsi_interaction'] = (df_features['sma_20'] / df_features['close']) * df_features['rsi_14']
+        feature_columns.append('sma_rsi_interaction')
     
     # Select only available features
     available_features = [f for f in feature_columns if f in df_features.columns]
@@ -175,15 +185,16 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
     )
     
     # Feature selection (select top K features - adaptive based on data size)
-    # Use fewer features for smaller datasets to prevent overfitting
+    # Use mutual information for better feature selection (captures non-linear relationships)
     if len(X_train) < 200:
-        k_features = min(20, len(X_train.columns))
-    elif len(X_train) < 500:
         k_features = min(25, len(X_train.columns))
+    elif len(X_train) < 500:
+        k_features = min(35, len(X_train.columns))
     else:
-        k_features = min(30, len(X_train.columns))
+        k_features = min(40, len(X_train.columns))
     
-    feature_selector = SelectKBest(score_func=f_classif, k=k_features)
+    # Use mutual information for better feature selection (better for non-linear relationships)
+    feature_selector = SelectKBest(score_func=mutual_info_classif, k=k_features)
     X_train_selected = pd.DataFrame(
         feature_selector.fit_transform(X_train_scaled, y_train_fit),
         columns=[X_train_fit.columns[i] for i in feature_selector.get_support(indices=True)],
@@ -202,70 +213,74 @@ def train_model(X: pd.DataFrame, y: pd.Series, test_size: float = 0.2) -> Tuple[
     
     # Create ensemble of models with optimal hyperparameters
     # Model 1: Random Forest (good for non-linear patterns)
-    # Adaptive parameters based on data size
+    # Adaptive parameters based on data size - optimized for better test accuracy
     if len(X_train) < 200:
-        rf_max_depth = 5
-        rf_min_split = 30
-        rf_min_leaf = 15
-        rf_n_est = 80
-    elif len(X_train) < 500:
         rf_max_depth = 6
         rf_min_split = 25
-        rf_min_leaf = 12
-        rf_n_est = 100
-    else:
-        rf_max_depth = 7
-        rf_min_split = 20
         rf_min_leaf = 10
-        rf_n_est = 120
+        rf_n_est = 150
+    elif len(X_train) < 500:
+        rf_max_depth = 8
+        rf_min_split = 20
+        rf_min_leaf = 8
+        rf_n_est = 200
+    else:
+        rf_max_depth = 10
+        rf_min_split = 15
+        rf_min_leaf = 5
+        rf_n_est = 250
     
     rf_model = RandomForestClassifier(
         n_estimators=rf_n_est,
         max_depth=rf_max_depth,
         min_samples_split=rf_min_split,
         min_samples_leaf=rf_min_leaf,
-        max_features='sqrt',
-        max_samples=0.8,  # Use only 80% of samples per tree (bootstrap)
+        max_features='log2',  # Use log2 for better feature diversity
+        max_samples=0.85,  # Use 85% of samples per tree (slightly more data)
         class_weight='balanced',
         random_state=42,
         n_jobs=-1
     )
     
     # Model 2: Gradient Boosting with early stopping
-    # Adaptive parameters
+    # Adaptive parameters - optimized for better test accuracy
     if len(X_train) < 200:
-        gb_max_depth = 3
-        gb_min_split = 30
-        gb_min_leaf = 15
-        gb_n_est = 80
-    elif len(X_train) < 500:
         gb_max_depth = 4
-        gb_min_split = 25
-        gb_min_leaf = 12
-        gb_n_est = 100
-    else:
-        gb_max_depth = 5
         gb_min_split = 20
-        gb_min_leaf = 10
-        gb_n_est = 120
+        gb_min_leaf = 8
+        gb_n_est = 150
+        gb_lr = 0.08
+    elif len(X_train) < 500:
+        gb_max_depth = 5
+        gb_min_split = 15
+        gb_min_leaf = 6
+        gb_n_est = 200
+        gb_lr = 0.06
+    else:
+        gb_max_depth = 6
+        gb_min_split = 12
+        gb_min_leaf = 4
+        gb_n_est = 250
+        gb_lr = 0.05
     
     gb_model = GradientBoostingClassifier(
         n_estimators=gb_n_est,
         max_depth=gb_max_depth,
-        learning_rate=0.05,
+        learning_rate=gb_lr,
         min_samples_split=gb_min_split,
         min_samples_leaf=gb_min_leaf,
-        subsample=0.7,
+        subsample=0.75,  # Increased for more data usage
         validation_fraction=0.1,
-        n_iter_no_change=10,  # Early stopping
+        n_iter_no_change=15,  # More patience for early stopping
         random_state=42
     )
     
     # Ensemble: Voting Classifier (combines both models)
+    # Optimized weights for better performance
     ensemble_model = VotingClassifier(
         estimators=[('rf', rf_model), ('gb', gb_model)],
         voting='soft',  # Use probability voting
-        weights=[2, 1]  # Give more weight to Random Forest
+        weights=[1.5, 1]  # Balanced weights for better ensemble performance
     )
     
     # Train models with validation set
